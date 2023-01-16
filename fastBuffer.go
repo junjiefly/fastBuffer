@@ -91,7 +91,7 @@ func (fb *FastBuffer) allocate(size int) {
 		if i := strings.LastIndex(file, "/"); i >= 0 {
 			file = file[i+1:]
 		}
-		logPrintf("TT ++ add buf:%d inuse:%v roff:%d woff:%d file:%s line:%d ptr:%p ok:%v \n", bufTotal, fb.inuse, fb.roff, fb.woff, file, line, fb, ok)
+		logPrintf("TT fb ++, total:%d inuse:%v roff:%d woff:%d file:%s line:%d ptr:%p ok:%v \n", bufTotal, fb.inuse, fb.roff, fb.woff, file, line, fb, ok)
 	}
 	fb.inuse = true
 }
@@ -115,7 +115,7 @@ func (fb *FastBuffer) free() {
 		if i := strings.LastIndex(file, "/"); i >= 0 {
 			file = file[i+1:]
 		}
-		logPrintf("TT -- del buf:%d inuse:%v roff:%d woff:%d file:%s line:%d ptr:%p ok:%v\n", bufTotal, fb.inuse, fb.roff, fb.woff, file, line, fb, ok)
+		logPrintf("TT fb --, total:%d inuse:%v roff:%d woff:%d file:%s line:%d ptr:%p ok:%v\n", bufTotal, fb.inuse, fb.roff, fb.woff, file, line, fb, ok)
 	}
 	fb.inuse = false
 }
