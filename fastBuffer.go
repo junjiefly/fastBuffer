@@ -276,3 +276,16 @@ func (fb *FastBuffer) WriteTo(w io.Writer) (n int64, err error) {
 	fb.reset()
 	return n, nil
 }
+
+func (fb *FastBuffer)Write(buf []byte) (n int, err error){
+	return fb.CopyFrom(buf)
+}
+
+func (fb *FastBuffer)WriteByte(b byte) (n int, err error){
+	if 1 > len(fb.buf) {
+		return 0, io.ErrShortBuffer
+	}
+	fb.buf[fb.roff] = b
+	fb.roff ++
+	return 1, nil
+}
