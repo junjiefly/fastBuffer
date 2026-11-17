@@ -12,22 +12,61 @@ import (
 
 var bufTotal int64
 var extraTotal int64
-var debugLevel int
+var debugLevelValue int64
 
-var logPrintln func(args ...interface{})
-var logPrintf func(format string, args ...interface{})
+type logger struct {
+	println func(args ...interface{})
+	printf  func(format string, args ...interface{})
+}
+
+var noopLogger = logger{
+	println: func(args ...interface{}) {},
+	printf:  func(format string, args ...interface{}) {},
+}
+
+var currentLogger atomic.Value
+
+func init() {
+	currentLogger.Store(noopLogger)
+}
+
+func getLogger() logger {
+	if value := currentLogger.Load(); value != nil {
+		if logger, ok := value.(logger); ok {
+			return logger
+		}
+	}
+	return noopLogger
+}
+
+func logPrintln(args ...interface{}) {
+	getLogger().println(args...)
+}
+
+func logPrintf(format string, args ...interface{}) {
+	getLogger().printf(format, args...)
+}
 
 func InitLogger(println func(args ...interface{}), printf func(format string, args ...interface{})) {
-	logPrintln = println
-	logPrintf = printf
+	if println == nil {
+		println = func(args ...interface{}) {}
+	}
+	if printf == nil {
+		printf = func(format string, args ...interface{}) {}
+	}
+	currentLogger.Store(logger{println: println, printf: printf})
+}
+
+func debugLevel() int64 {
+	return atomic.LoadInt64(&debugLevelValue)
 }
 
 func SetDebuger(lv int) {
-	debugLevel = lv
+	atomic.StoreInt64(&debugLevelValue, int64(lv))
 	logPrintln("fast buffer debug level changes to", lv)
 }
 
-//check leak
+// check leak
 func Check() (memCnt int64, boolCnt int64, extraCnt int64) {
 	return atomic.LoadInt64(&memTotal), atomic.LoadInt64(&bufTotal), atomic.LoadInt64(&extraTotal)
 }
@@ -90,7 +129,7 @@ func NewDioFB(size, align int) (*FastBuffer, error) {
 	fb.buf = raw[off : off+rounded : off+rounded]
 	fb.align = align
 	atomic.AddInt64(&bufTotal, 1)
-	if debugLevel&2 > 0 {
+	if debugLevel()&2 > 0 {
 		_, file, line, ok := runtime.Caller(1)
 		if i := strings.LastIndex(file, "/"); i >= 0 {
 			file = file[i+1:]
@@ -123,7 +162,7 @@ func WrapDio(data []byte, align int) (*FastBuffer, error) {
 	fb.raw = nil
 	fb.align = align
 	atomic.AddInt64(&bufTotal, 1)
-	if debugLevel&2 > 0 {
+	if debugLevel()&2 > 0 {
 		_, file, line, ok := runtime.Caller(1)
 		if i := strings.LastIndex(file, "/"); i >= 0 {
 			file = file[i+1:]
@@ -134,7 +173,7 @@ func WrapDio(data []byte, align int) (*FastBuffer, error) {
 	return fb, nil
 }
 
-//you called NewFB(), and you must call FreeFB()
+// you called NewFB(), and you must call FreeFB()
 func FreeFB(fb *FastBuffer) {
 	if fb == nil {
 		return
@@ -175,7 +214,7 @@ func (fb *FastBuffer) Align() int {
 func (fb *FastBuffer) allocate(size int) {
 	fb.buf = Allocate(size)
 	atomic.AddInt64(&bufTotal, 1)
-	if debugLevel&2 > 0 {
+	if debugLevel()&2 > 0 {
 		_, file, line, ok := runtime.Caller(2)
 		if i := strings.LastIndex(file, "/"); i >= 0 {
 			file = file[i+1:]
@@ -208,7 +247,7 @@ func (fb *FastBuffer) free() {
 		fb.buf = nil
 	}
 	atomic.AddInt64(&bufTotal, -1)
-	if debugLevel&2 > 0 {
+	if debugLevel()&2 > 0 {
 		_, file, line, ok := runtime.Caller(2)
 		if i := strings.LastIndex(file, "/"); i >= 0 {
 			file = file[i+1:]
@@ -258,7 +297,7 @@ func (fb *FastBuffer) Bytes() []byte {
 	if fb.buf == nil {
 		return nil
 	}
-	if debugLevel&4 > 0 && fb.align > 0 && (fb.woff%fb.align != 0 || (fb.roff-fb.woff)%fb.align != 0) {
+	if debugLevel()&4 > 0 && fb.align > 0 && (fb.woff%fb.align != 0 || (fb.roff-fb.woff)%fb.align != 0) {
 		logPrintf("Dio warning! Bytes() not aligned: align:%d woff:%d roff:%d ptr:%p\n", fb.align, fb.woff, fb.roff, fb)
 	}
 	return fb.buf[fb.woff:fb.roff]
@@ -288,7 +327,7 @@ func (fb *FastBuffer) GetReadOffset() int {
 	}
 }
 
-//read data to fb data
+// read data to fb data
 func (fb *FastBuffer) ReadFrom(r io.Reader) (int64, error) {
 	if fb.buf == nil {
 		return 0, errors.New("buffer empty")
@@ -326,7 +365,7 @@ func (fb *FastBuffer) ReadFrom(r io.Reader) (int64, error) {
 	}
 }
 
-//copy fb data to other user
+// copy fb data to other user
 func (fb *FastBuffer) Read(p []byte) (n int, err error) {
 	if fb.empty() {
 		// Buffer is empty, reset to recover space.
@@ -341,7 +380,7 @@ func (fb *FastBuffer) Read(p []byte) (n int, err error) {
 	return n, nil
 }
 
-//copy data from other user
+// copy data from other user
 func (fb *FastBuffer) CopyFrom(p []byte) (n int, err error) {
 	if len(p) > len(fb.buf) {
 		return 0, io.ErrShortBuffer
@@ -351,7 +390,7 @@ func (fb *FastBuffer) CopyFrom(p []byte) (n int, err error) {
 	return m, nil
 }
 
-//send fb data to other user
+// send fb data to other user
 func (fb *FastBuffer) WriteTo(w io.Writer) (n int64, err error) {
 	if fb.buf == nil {
 		return 0, nil
@@ -377,15 +416,15 @@ func (fb *FastBuffer) WriteTo(w io.Writer) (n int64, err error) {
 	return n, nil
 }
 
-func (fb *FastBuffer)Write(buf []byte) (n int, err error){
+func (fb *FastBuffer) Write(buf []byte) (n int, err error) {
 	return fb.CopyFrom(buf)
 }
 
-func (fb *FastBuffer)WriteByte(b byte) (n int, err error){
+func (fb *FastBuffer) WriteByte(b byte) (n int, err error) {
 	if 1 > len(fb.buf) {
 		return 0, io.ErrShortBuffer
 	}
 	fb.buf[fb.roff] = b
-	fb.roff ++
+	fb.roff++
 	return 1, nil
 }

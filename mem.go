@@ -65,14 +65,14 @@ func Memset(buf []byte) {
 	memset.Memset(buf, 0)
 }
 
-//get a mem block, but may have dirty data
-//you should notice the length and avoid to read dirty data
+// get a mem block, but may have dirty data
+// you should notice the length and avoid to read dirty data
 func Allocate(size int) []byte {
 	if pool := getMemPool(size); pool != nil {
 		atomic.AddInt64(&memTotal, 1)
 		slab := *pool.Get().(*[]byte)
 
-		if debugLevel&1 > 0 {
+		if debugLevel()&1 > 0 {
 			_, file, line, ok := runtime.Caller(2)
 			if i := strings.LastIndex(file, "/"); i >= 0 {
 				file = file[i+1:]
@@ -86,14 +86,14 @@ func Allocate(size int) []byte {
 	return make([]byte, size)
 }
 
-//get a mem block with no dirty data
-//but memset will take some costs
+// get a mem block with no dirty data
+// but memset will take some costs
 func AllocateNew(size int) []byte {
 	if pool := getMemPool(size); pool != nil {
 		atomic.AddInt64(&memTotal, 1)
 		slab := *pool.Get().(*[]byte)
 		Memset(slab)
-		if debugLevel&1 > 0 {
+		if debugLevel()&1 > 0 {
 			_, file, line, ok := runtime.Caller(2)
 			if i := strings.LastIndex(file, "/"); i >= 0 {
 				file = file[i+1:]
@@ -106,7 +106,7 @@ func AllocateNew(size int) []byte {
 	return make([]byte, size)
 }
 
-//you called Allocate()/AllocateNew(), and you must call Free()
+// you called Allocate()/AllocateNew(), and you must call Free()
 func Free(buf []byte) {
 	bufCap := cap(buf)
 	if _, ok := capMap[bufCap]; !ok {
@@ -115,7 +115,7 @@ func Free(buf []byte) {
 	}
 	if pool := getMemPool(bufCap); pool != nil {
 		atomic.AddInt64(&memTotal, -1)
-		if debugLevel&1 > 0 {
+		if debugLevel()&1 > 0 {
 			_, file, line, ok := runtime.Caller(2)
 			if i := strings.LastIndex(file, "/"); i >= 0 {
 				file = file[i+1:]
